@@ -1,6 +1,6 @@
 """Trusted public-repository workflow helper: download a draft or promote it.
 
-Only five named distribution assets are accepted. This file does not execute
+Only the repository's explicit asset allowlist is accepted. This file does not execute
 application code; the separate read-only test jobs do that with no credentials.
 """
 from hashlib import sha256
@@ -12,7 +12,21 @@ import subprocess
 import sys
 import traceback
 
-REPOSITORY = '764s/NovelCollector-updates'
+PUBLIC_REPOSITORY = '764s/NovelCollector-updates'
+SOURCE_REPOSITORY = '764s/NovelCollector'
+REPOSITORY = os.environ.get('RELEASE_REPOSITORY', PUBLIC_REPOSITORY)
+if REPOSITORY not in (PUBLIC_REPOSITORY, SOURCE_REPOSITORY):
+    raise ValueError('Unsupported release repository')
+
+
+def asset_names(version):
+    suffixes = ['-app-only.zip', '-app-only.zip.sha256']
+    if REPOSITORY == SOURCE_REPOSITORY:
+        suffixes += ['-windows-x64.zip', '-linux-x64.tar.gz']
+    names = {'NovelCollector-' + version + suffix for suffix in suffixes}
+    if REPOSITORY == SOURCE_REPOSITORY:
+        names.add('SHA256SUMS.txt')
+    return names
 
 
 def gh(*args):
@@ -26,19 +40,17 @@ def candidate(tag):
     if not re.fullmatch(r'v\d+\.\d+\.\d+', tag):
         raise ValueError('Expected a version tag')
     repo = json.loads(gh('api', 'repos/' + REPOSITORY))
-    if repo.get('private') is not False:
+    if REPOSITORY == PUBLIC_REPOSITORY and repo.get('private') is not False:
         raise ValueError('Distribution repository must remain public')
     version = tag[1:]
-    names = {'NovelCollector-' + version + suffix for suffix in
-             ('-app-only.zip', '-app-only.zip.sha256', '-windows-x64.zip', '-linux-x64.tar.gz')}
-    names.add('SHA256SUMS.txt')
+    names = asset_names(version)
     releases = json.loads(gh('api', 'repos/' + REPOSITORY + '/releases?per_page=100'))
     release = next((item for item in releases if item.get('tag_name') == tag), None)
     if release is None or release.get('prerelease'):
         raise ValueError('Missing stable candidate')
     assets = release.get('assets', [])
-    if len(assets) != 5 or {a['name'] for a in assets} != names:
-        raise ValueError('Expected exactly five release assets')
+    if len(assets) != len(names) or {a['name'] for a in assets} != names:
+        raise ValueError('Release assets do not match this repository\'s role')
     for asset in assets:
         if (asset.get('state') != 'uploaded' or not 0 < asset.get('size', 0) <= 64 * 1024 * 1024
                 or not re.fullmatch(r'sha256:[0-9a-f]{64}', asset.get('digest', ''))):
@@ -52,13 +64,14 @@ def staged_files(tag):
     root = Path('incoming')
     manifest = json.loads((root / 'candidate.json').read_text(encoding='utf-8'))
     version = tag[1:]
-    names = {'NovelCollector-' + version + suffix for suffix in
-             ('-app-only.zip', '-app-only.zip.sha256', '-windows-x64.zip', '-linux-x64.tar.gz')} | {'SHA256SUMS.txt'}
+    names = asset_names(version)
     if manifest.get('tag') != tag or not re.fullmatch('[0-9a-f]{40}', manifest.get('source_commit', '')):
         raise ValueError('Candidate source identity mismatch')
     records = manifest.get('assets', [])
-    if len(records) != 5 or {a['name'] for a in records} != names:
-        raise ValueError('Expected five distribution files')
+    if len(records) != len(names) or {a['name'] for a in records} != names:
+        raise ValueError('Candidate assets do not match this repository\'s role')
+    if {p.name for p in root.iterdir()} != names | {'candidate.json'}:
+        raise ValueError('Unexpected file in candidate directory')
     for item in records:
         path = root / item['name']
         if path.is_symlink() or not 0 < path.stat().st_size <= 64 * 1024 * 1024:
@@ -86,7 +99,7 @@ def upload_candidate(tag):
     names = {a['name'] for a in records}
     version = tag[1:]
     repo = json.loads(gh('api', 'repos/' + REPOSITORY))
-    if repo.get('private') is not False:
+    if REPOSITORY == PUBLIC_REPOSITORY and repo.get('private') is not False:
         raise ValueError('Distribution must be public')
     releases = json.loads(gh('api', 'repos/' + REPOSITORY + '/releases?per_page=100'))
     existing = next((a for a in releases if a.get('tag_name') == tag), None)
@@ -96,7 +109,7 @@ def upload_candidate(tag):
     if existing and not existing.get('draft'):
         actual = {a['name']:(a['size'], a.get('digest')) for a in existing.get('assets', []) if a.get('state') == 'uploaded'}
         expected = {a['name']:(a['bytes'], 'sha256:' + a['sha256']) for a in records}
-        if len(existing.get('assets', [])) != 5 or actual != expected:
+        if len(existing.get('assets', [])) != len(names) or actual != expected:
             raise ValueError('Refusing to replace a published release')
         print(json.dumps({'verified_existing_release': tag, 'assets': len(records)}))
         return
@@ -106,7 +119,8 @@ def upload_candidate(tag):
     notes_path = root / 'release-notes.md'
     notes_path.write_text(notes, encoding='utf-8')
     if not existing:
-        gh('release', 'create', tag, '--repo', REPOSITORY, '--target', 'main', '--draft',
+        target = ['--verify-tag'] if REPOSITORY == SOURCE_REPOSITORY else ['--target', 'main']
+        gh('release', 'create', tag, '--repo', REPOSITORY, *target, '--draft',
            '--title', 'NovelCollector ' + version, '--notes-file', str(notes_path))
     gh('release', 'upload', tag, '--repo', REPOSITORY, *(str(root / name) for name in sorted(names)), '--clobber')
     uploaded = candidate(tag)

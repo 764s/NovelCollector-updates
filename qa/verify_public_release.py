@@ -1,7 +1,8 @@
 """Portable release acceptance: offline candidate or anonymous published update.
 
-Self-contained so the public distribution repository can run it without private
-source access. Online mode deliberately starts the SAME client with a lower
+Full packages are tested in the source repository. The public update repository
+tests app-only archives with the runner's Python, without a full package.
+Online mode deliberately starts the SAME client with a lower
 version label; it is not a claim to upgrade an old, private-source client.
 """
 import argparse
@@ -114,6 +115,51 @@ def next_archive(archive, version):
     return output.getvalue()
 
 
+def application_files(archive):
+    with zipfile.ZipFile(archive) as bundle:
+        manifest = json.loads(bundle.read('manifest.json'))
+        if not re.fullmatch(r'\d+\.\d+\.\d+', manifest['version']):
+            raise ValueError('Invalid application version')
+        names = bundle.namelist()
+        if len(names) != len(set(names)) or set(names) != {'manifest.json', *manifest['files']}:
+            raise ValueError('Update archive file list mismatch')
+        files = {}
+        for name, digest in manifest['files'].items():
+            if not name.startswith('app/') or '..' in PurePosixPath(name).parts or '\\' in name:
+                raise ValueError('Unsafe application path')
+            data = bundle.read(name)
+            if sha256(data).hexdigest() != digest:
+                raise ValueError('Application digest mismatch')
+            files[name] = data
+    return manifest, files
+
+
+def app_only_home(archive, root, platform):
+    manifest, files = application_files(archive)
+    home = root / 'app-only-fixture'
+    version = manifest['version']
+    for name, data in files.items():
+        target = home / 'releases' / version / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(data)
+    (home / 'active-release.json').write_text(json.dumps({
+        'schema': 1, 'version': version, 'path': 'releases/' + version + '/app', 'previous': None}), encoding='utf-8')
+    (home / 'runtime-compat.json').write_text(json.dumps({
+        'schema': 1, 'data_format': manifest['data_format'], 'runtime': manifest['runtime'], 'platform': platform}), encoding='utf-8')
+    (home / 'app').mkdir()
+    # Test fixture only: production launchers are exercised by the full-release jobs.
+    (home / 'app/main.py').write_text('''import json, os, runpy, sys
+from pathlib import Path
+home = Path(__file__).resolve().parent.parent
+pointer = json.loads((home / 'active-release.json').read_text(encoding='utf-8'))
+app = home / pointer['path']
+os.environ['NOVELCOLLECTOR_HOME'] = str(home)
+sys.path.insert(0, str(app))
+runpy.run_path(str(app / 'main.py'), run_name='__main__')
+''', encoding='utf-8')
+    return home
+
+
 def check(args):
     platform = 'windows-x64' if os.name == 'nt' else 'linux-x64'
     with tempfile.TemporaryDirectory(prefix='novel-public-') as temp:
@@ -123,21 +169,29 @@ def check(args):
             published = json.loads(fetch('https://api.github.com/repos/' + REPOSITORY + '/releases/latest', 512 * 1024))
             if published.get('tag_name') != args.tag or published.get('draft') or published.get('prerelease'):
                 raise ValueError('Expected exact stable public release')
-            suffix = '.zip' if os.name == 'nt' else '.tar.gz'
-            name = 'NovelCollector-' + args.tag[1:] + '-' + platform + suffix
+            name = 'NovelCollector-' + args.tag[1:] + '-app-only.zip'
             asset = next(a for a in published['assets'] if a['name'] == name)
             data = fetch('https://api.github.com/repos/' + REPOSITORY + '/releases/assets/' + str(asset['id']),
                          64 * 1024 * 1024, 'application/octet-stream')
             if len(data) != asset['size'] or 'sha256:' + sha256(data).hexdigest() != asset['digest']:
-                raise ValueError('Public full package differs from release digest')
-            archive = root / name
-            archive.write_bytes(data)
+                raise ValueError('Public update differs from release digest')
+            update_archive = root / name
+            update_archive.write_bytes(data)
         else:
-            archive = args.package.resolve()
-        home = unpack(archive, root / 'unpacked')
-        verify_package(home)
+            update_archive = args.archive.resolve()
+        if args.package:
+            home = unpack(args.package.resolve(), root / 'unpacked')
+            verify_package(home)
+        else:
+            home = app_only_home(update_archive, root, platform)
         pointer = json.loads((home / 'active-release.json').read_text(encoding='utf-8'))
         current = pointer['version']
+        manifest, _ = application_files(update_archive)
+        if manifest['version'] != current:
+            raise ValueError('Full package and update version differ')
+        for name, digest in manifest['files'].items():
+            if sha256((home / 'releases' / current / name).read_bytes()).hexdigest() != digest:
+                raise ValueError('Full package and update sources differ')
         if args.online and current != args.tag[1:]:
             raise ValueError('Wrong public package version')
         before_version = current
@@ -163,13 +217,14 @@ def check(args):
             if name.startswith(('GH_', 'GITHUB_')) or name in ('PYTHONHOME', 'PYTHONPATH'):
                 env.pop(name, None)
         launcher = home / ('NovelCollector.exe' if os.name == 'nt' else 'NovelCollector')
-        python = home / ('runtime/python.exe' if os.name == 'nt' else 'runtime/bin/python3')
+        python = home / ('runtime/python.exe' if os.name == 'nt' else 'runtime/bin/python3') if args.package else Path(sys.executable)
+        command = [str(launcher)] if args.package else [str(python), '-I', '-B', str(home / 'app/main.py')]
         log, address, process = root / 'app.log', None, None
 
         def start(wanted):
             nonlocal process, address
             with log.open('wb') as stream:
-                process = subprocess.Popen([str(launcher), '--no-browser', '--port', '0'],
+                process = subprocess.Popen([*command, '--no-browser', '--port', '0'],
                                            cwd=home, env=env, stdout=stream, stderr=stream)
             address, state = wait_state(log, wanted)
             return state
@@ -201,7 +256,7 @@ def check(args):
             else:
                 parts = current.split('.')
                 target_version = '.'.join([*parts[:2], str(int(parts[2]) + 1)])
-                prepared = api(address, '/api/updates/prepare', {'archive': base64.b64encode(next_archive(args.archive, target_version)).decode()})
+                prepared = api(address, '/api/updates/prepare', {'archive': base64.b64encode(next_archive(update_archive, target_version)).decode()})
             assert prepared['version'] == target_version
             installed = api(address, '/api/updates/install', {'stage_id': prepared['stage_id'], 'confirmed': True})
             assert Path(installed['backup_dir'], 'app.db').is_file()
@@ -211,9 +266,7 @@ def check(args):
             assert any(c['id'] == saved['id'] and c['keywords'] == saved['keywords'] for c in upgraded['collections'])
             if args.online:
                 assert api(address, '/api/updates/github/check', {})['status'] == 'current'
-                update = next(a for a in published['assets'] if a['name'].endswith('-app-only.zip'))
-                with zipfile.ZipFile(io.BytesIO(fetch('https://api.github.com/repos/' + REPOSITORY + '/releases/assets/' + str(update['id']),
-                                                    20 * 1024 * 1024, 'application/octet-stream'))) as bundle:
+                with zipfile.ZipFile(update_archive) as bundle:
                     manifest = json.loads(bundle.read('manifest.json'))
                 app = home / 'releases' / current / 'app'
                 for relative, digest in manifest['files'].items():
@@ -237,11 +290,12 @@ def check(args):
             count = re.search(r'Ran (\d+) tests', completed.stderr)
             assert count and int(count[1]) >= (67 if os.name == 'nt' else 258)
             report = {'version': current, 'platform': platform, 'online': args.online,
-                'application_github_credentials': False, 'application_cli': False, 'native_launcher': True,
+                'application_github_credentials': False, 'application_cli': False, 'native_launcher': bool(args.package),
+                'runtime': 'bundled' if args.package else 'runner Python',
                 'backup_and_data_preserved': True, 'installed_archive_tests': int(count[1]),
                 'test_scope': 'update modules' if os.name == 'nt' else 'full application suite',
                 'install_and_restart': True, 'rollback': not args.online,
-                'start_kind': 'same-client lower-version fixture' if args.online else 'complete package'}
+                'start_kind': 'same-client lower-version fixture' if args.online else ('complete package' if args.package else 'app-only fixture')}
             if args.output:
                 args.output.parent.mkdir(parents=True, exist_ok=True)
                 args.output.write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')
@@ -261,8 +315,8 @@ if __name__ == '__main__':
     if options.online:
         if not options.tag or not re.fullmatch(r'v\d+\.\d+\.\d+', options.tag):
             parser.error('--online requires --tag vX.Y.Z')
-    elif not options.package or not options.archive:
-        parser.error('offline mode requires --package and --archive')
+    elif not options.archive:
+        parser.error('offline mode requires --archive; --package also tests the native full package')
     try:
         check(options)
     except Exception:

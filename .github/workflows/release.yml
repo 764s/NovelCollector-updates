@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing draft release tag, for example v2.5.2
+        description: Staged app-only update tag, for example v2.5.2
         required: true
         type: string
 concurrency:
@@ -13,6 +13,7 @@ permissions:
   contents: read
 env:
   RELEASE_TAG: ${{ inputs.tag }}
+  RELEASE_REPOSITORY: 764s/NovelCollector-updates
 defaults:
   run:
     shell: bash
@@ -23,13 +24,13 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-      - name: Retrieve the staged distribution files
+      - name: Retrieve the staged app-only update
         run: |
           python -c 'import os,re; assert re.fullmatch(r"v\d+\.\d+\.\d+", os.environ["RELEASE_TAG"])'
           git fetch --depth=1 origin "refs/heads/candidate/${RELEASE_TAG#v}"
           mkdir incoming
           git -c core.autocrlf=false archive FETCH_HEAD | tar -x -C incoming
-      - name: Upload verified distribution assets to the draft
+      - name: Upload the update and its checksum to the draft
         env:
           GH_TOKEN: ${{ github.token }}
         run: python qa/public_release_candidate.py upload "$RELEASE_TAG"
@@ -40,11 +41,7 @@ jobs:
       matrix:
         include:
           - os: windows-latest
-            platform: windows-x64
-            suffix: .zip
           - os: ubuntu-24.04
-            platform: linux-x64
-            suffix: .tar.gz
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     outputs:
@@ -60,13 +57,10 @@ jobs:
           mkdir incoming
           git -c core.autocrlf=false archive FETCH_HEAD | tar -x -C incoming
           python qa/public_release_candidate.py download "$RELEASE_TAG"
-      - name: Verify native install, backup, rollback and packaged tests
-        env:
-          PACKAGE_PLATFORM: ${{ matrix.platform }}
-          PACKAGE_SUFFIX: ${{ matrix.suffix }}
+      - name: Verify app-only install, backup, rollback and tests
         run: |
           version="${RELEASE_TAG#v}"
-          python qa/verify_public_release.py --package "candidate/NovelCollector-${version}-${PACKAGE_PLATFORM}${PACKAGE_SUFFIX}" --archive "candidate/NovelCollector-${version}-app-only.zip" --output preflight.json
+          python qa/verify_public_release.py --archive "candidate/NovelCollector-${version}-app-only.zip" --output preflight.json
   publish:
     needs: preflight
     runs-on: ubuntu-24.04

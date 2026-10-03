@@ -1,13 +1,13 @@
 # NovelCollector 在线更新
 
-这是 NovelCollector 的公开发行仓库。安装包及更新包可以直接下载，无需 GitHub 登录、令牌或 GitHub CLI。源码仓库继续保持私有；发行包中包含运行所需的 Python 代码。
+此仓库只处理 NovelCollector 的在线更新，发布 app-only 更新 ZIP 和对应的 `.sha256` 校验文件。软件检查和下载更新无需 GitHub 登录、令牌或 GitHub CLI。
 
-下载最新版：[Releases](https://github.com/764s/NovelCollector-updates/releases/latest)。Windows 用户下载 `windows-x64.zip`，解压后运行 `NovelCollector.exe`；Linux 用户下载 `linux-x64.tar.gz`。
+首次安装、重新安装和完整发行说明请到 [NovelCollector Releases](https://github.com/764s/NovelCollector/releases/latest)。Windows、Linux 完整安装包在原仓库发布。
 
-从 2.5.2 开始，网页中的“检查更新 → 更新并重启”直接使用本仓库。旧客户端仍指向私有仓库，本次请换用新的完整包一次，同一系统用户的数据目录保持不变。
+从 2.5.2 开始，软件网页中的“检查更新 → 更新并重启”直接使用本仓库。旧客户端请先从原仓库安装新完整包一次。
 
-每次发布先在独立的 `candidate/版本` 分支准备五项发行资产与校验清单，发行工作流将其上传到草稿，再在 Windows、Linux 上核对摘要并验证安装、备份、回退和包内测试，随后发布。发布后再从未登录的原生环境匿名下载实际发行包，验证在线安装和重启。通过后的回执位于 `release-status/版本` 分支。
+工作流仅接受两项更新文件，完整安装包会被拒绝。更新候选文件位于 `candidate/版本` 分支；在 Windows、Linux 使用 CI 的 Python 验证安装、备份、回退与测试后发布，再验证匿名在线检查、下载、安装和重启。通过后的回执位于 `release-status/版本` 分支。
 
-`qa` 中仅有发行验证脚本，不含私有源码仓库的历史、用户数据或凭据。
+原生启动器、内置运行时和完整包的验收在原仓库完成。公开更新包包含应用 Python 代码，`qa` 保存更新验证脚本。
 
-验收范围：Linux 包内运行 258 项应用测试，Windows 运行 67 项更新相关测试；两者都实际执行完整包启动、安装、备份、回退及公开后匿名在线更新。现有全套应用测试在 Windows 上另有路径/资源释放与抓取超时失败，不计入本次已通过的更新验收。
+测试范围：Linux 运行 258 项应用测试，Windows 运行 67 项更新相关测试。Windows 全套应用测试中已有的路径、资源释放与抓取超时问题不计入已通过的更新验收。

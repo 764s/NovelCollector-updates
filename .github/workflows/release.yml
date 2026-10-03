@@ -52,11 +52,14 @@ jobs:
       linux_fingerprint: ${{ steps.download.outputs.linux_fingerprint }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-      - name: Download and verify candidate digests
+      - name: Read the public candidate and verify its digests
         id: download
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: python qa/public_release_candidate.py download "$RELEASE_TAG"
+        run: |
+          python -c 'import os,re; assert re.fullmatch(r"v\d+\.\d+\.\d+", os.environ["RELEASE_TAG"])'
+          git fetch --depth=1 origin "refs/heads/candidate/${RELEASE_TAG#v}"
+          mkdir incoming
+          git archive FETCH_HEAD | tar -x -C incoming
+          python qa/public_release_candidate.py download "$RELEASE_TAG"
       - name: Verify native install, backup, rollback and packaged tests
         env:
           PACKAGE_PLATFORM: ${{ matrix.platform }}

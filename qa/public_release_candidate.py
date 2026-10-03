@@ -10,6 +10,7 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import traceback
 
 REPOSITORY = '764s/NovelCollector-updates'
 
@@ -45,7 +46,7 @@ def candidate(tag):
     return release
 
 
-def upload_candidate(tag):
+def staged_files(tag):
     if not re.fullmatch(r'v\d+\.\d+\.\d+', tag):
         raise ValueError('Expected a version tag')
     root = Path('incoming')
@@ -65,6 +66,25 @@ def upload_candidate(tag):
         data = path.read_bytes()
         if len(data) != item['bytes'] or sha256(data).hexdigest() != item['sha256']:
             raise ValueError('Candidate file digest mismatch')
+    return manifest
+
+
+def download_staged(tag):
+    manifest = staged_files(tag)
+    fingerprint = sha256(json.dumps(sorted((a['name'], a['bytes'], 'sha256:' + a['sha256']) for a in manifest['assets'])).encode()).hexdigest()
+    Path('incoming').rename('candidate')
+    if os.environ.get('GITHUB_OUTPUT'):
+        platform = 'windows' if os.name == 'nt' else 'linux'
+        with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as stream:
+            stream.write(platform + '_fingerprint=' + fingerprint + '\n')
+
+
+def upload_candidate(tag):
+    manifest = staged_files(tag)
+    root = Path('incoming')
+    records = manifest['assets']
+    names = {a['name'] for a in records}
+    version = tag[1:]
     repo = json.loads(gh('api', 'repos/' + REPOSITORY))
     if repo.get('private') is not False:
         raise ValueError('Distribution must be public')
@@ -95,25 +115,15 @@ def main():
     if action == 'upload':
         upload_candidate(tag)
         return
+    if action == 'download':
+        download_staged(tag)
+        return
     release = candidate(tag)
     fingerprint = sha256(json.dumps(sorted((a['name'], a['size'], a['digest']) for a in release['assets'])).encode()).hexdigest()
     if action in ('promote', 'receipt'):
         if any(os.environ.get(name) != fingerprint for name in ('WINDOWS_FINGERPRINT', 'LINUX_FINGERPRINT')):
             raise ValueError('Candidate changed after native verification')
-    if action == 'download':
-        output = Path('candidate')
-        output.mkdir(exist_ok=True)
-        gh('release', 'download', tag, '--repo', REPOSITORY, '--dir', str(output))
-        for asset in release['assets']:
-            data = (output / asset['name']).read_bytes()
-            if len(data) != asset['size'] or 'sha256:' + sha256(data).hexdigest() != asset['digest']:
-                raise ValueError('Candidate digest mismatch')
-        (output / 'candidate.json').write_text(json.dumps(release), encoding='utf-8')
-        if os.environ.get('GITHUB_OUTPUT'):
-            platform = 'windows' if os.name == 'nt' else 'linux'
-            with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as stream:
-                stream.write(platform + '_fingerprint=' + fingerprint + '\n')
-    elif action == 'promote':
+    if action == 'promote':
         # Called only by the job depending on both native preflight jobs.
         # Re-running a successful workflow may verify the same immutable release.
         if release['draft']:
@@ -134,4 +144,14 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except Exception:
+        detail = traceback.format_exc()
+        for name in ('GH_TOKEN', 'GITHUB_TOKEN'):
+            if os.environ.get(name):
+                detail = detail.replace(os.environ[name], '[redacted]')
+        detail = re.sub(r'https?://\S+', '[URL redacted]', detail)
+        safe = detail.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+        print('::error::' + safe.encode('ascii', 'backslashreplace').decode('ascii'), flush=True)
+        raise SystemExit(1)

@@ -1,0 +1,19 @@
+{
+  "tag": "v2.5.2",
+  "version": "2.5.2",
+  "source_commit": "c979661db04b854fcd7ad0ede889ff9c8e6e498d",
+  "publisher_commit": "afa52540a722199f1936e665818e9be346e491de",
+  "assets": [
+    {
+      "name": "NovelCollector-2.5.2-app-only.zip",
+      "bytes": 168904,
+      "sha256": "90bfe183150940b3e16ad18b1fd9458e9321b3ec1faecf39d9b00dce599844d8"
+    },
+    {
+      "name": "NovelCollector-2.5.2-app-only.zip.sha256",
+      "bytes": 100,
+      "sha256": "3401036f943fc89995a31e2806c8a209cbdcfdfc3bf8beadc04e26370314083c"
+    }
+  ],
+  "notes": "# NovelCollector 2.5.2 在线更新\n\n此仓库只提供在线更新包及校验文件。已安装的程序请使用网页中的“检查更新 → 更新并重启”。\n\n首次安装或重新安装，请到 [NovelCollector 完整发行版](https://github.com/764s/NovelCollector/releases/tag/v2.5.2) 下载 Windows 或 Linux 完整包。\n\n<!-- source-commit: c979661db04b854fcd7ad0ede889ff9c8e6e498d -->\n"
+}

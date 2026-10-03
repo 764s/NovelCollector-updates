@@ -91,8 +91,15 @@ def upload_candidate(tag):
     releases = json.loads(gh('api', 'repos/' + REPOSITORY + '/releases?per_page=100'))
     existing = next((a for a in releases if a.get('tag_name') == tag), None)
     marker = '<!-- source-commit: ' + manifest['source_commit'] + ' -->'
-    if existing and (not existing.get('draft') or marker not in (existing.get('body') or '')):
-        raise ValueError('Refusing to replace a published release or unrelated draft')
+    if existing and marker not in (existing.get('body') or ''):
+        raise ValueError('Refusing an unrelated release')
+    if existing and not existing.get('draft'):
+        actual = {a['name']:(a['size'], a.get('digest')) for a in existing.get('assets', []) if a.get('state') == 'uploaded'}
+        expected = {a['name']:(a['bytes'], 'sha256:' + a['sha256']) for a in records}
+        if len(existing.get('assets', [])) != 5 or actual != expected:
+            raise ValueError('Refusing to replace a published release')
+        print(json.dumps({'verified_existing_release': tag, 'assets': len(records)}))
+        return
     notes = manifest.get('notes')
     if not isinstance(notes, str) or marker not in notes or len(notes) > 65536:
         raise ValueError('Invalid candidate release notes')

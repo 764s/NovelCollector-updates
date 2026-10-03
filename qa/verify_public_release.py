@@ -151,6 +151,7 @@ def check(args):
             lowered = home / 'releases' / before_version / 'app'
             lowered.parent.mkdir(parents=True)
             app.rename(lowered)
+            app.parent.rmdir()  # The lower-version fixture must leave no target-version directory.
             main = lowered / 'main.py'
             main.write_bytes(main.read_bytes().replace(("VERSION = '" + current + "'").encode(),
                                                       ("VERSION = '" + before_version + "'").encode()))

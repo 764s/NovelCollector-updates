@@ -1,0 +1,22 @@
+{
+  "version": "2.6.0",
+  "status": "success",
+  "repository": "764s/NovelCollector-updates",
+  "run_url": "https://github.com/764s/NovelCollector-updates/actions/runs/37121135131",
+  "candidate_fingerprint": "99a7cd433053e86912c9ad68e9a3216640a05a54912b4aaa5a3762965ff00876",
+  "windows_anonymous_update_verified": true,
+  "linux_anonymous_update_verified": true,
+  "source_repository_changed_visibility": false,
+  "assets": [
+    {
+      "name": "NovelCollector-2.6.0-app-only.zip",
+      "size": 181384,
+      "digest": "sha256:3b2984b2e4225dad6162254c7a503a570ca65d2e2a1a0a8bf7d736f18aedac05"
+    },
+    {
+      "name": "NovelCollector-2.6.0-app-only.zip.sha256",
+      "size": 100,
+      "digest": "sha256:f72eb9783b4f3f1b2a2262efc7cc8573d77d38413f451a078d560cfa7ef4ad3a"
+    }
+  ]
+}

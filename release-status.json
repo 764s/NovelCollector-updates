@@ -2,8 +2,8 @@
   "version": "2.5.2",
   "status": "success",
   "repository": "764s/NovelCollector-updates",
-  "run_url": "https://github.com/764s/NovelCollector-updates/actions/runs/37115205081",
-  "candidate_fingerprint": "c59035c3cc8e0c55251360eaca9752ddd4d6b0bdbc2b4ccd3798e986b9b3a2ed",
+  "run_url": "https://github.com/764s/NovelCollector-updates/actions/runs/37116568834",
+  "candidate_fingerprint": "34cfc2d8a044bd3e39a742a5a5c4c578c416fdd653828f13a8d79cb87e25e0d6",
   "windows_anonymous_update_verified": true,
   "linux_anonymous_update_verified": true,
   "source_repository_changed_visibility": false,
@@ -17,21 +17,6 @@
       "name": "NovelCollector-2.5.2-app-only.zip.sha256",
       "size": 100,
       "digest": "sha256:3401036f943fc89995a31e2806c8a209cbdcfdfc3bf8beadc04e26370314083c"
-    },
-    {
-      "name": "NovelCollector-2.5.2-linux-x64.tar.gz",
-      "size": 25024647,
-      "digest": "sha256:d543025117c291d30f176dcf9a15a8e2cd7badf93c2dc9f9b4736409d72de3af"
-    },
-    {
-      "name": "NovelCollector-2.5.2-windows-x64.zip",
-      "size": 12614927,
-      "digest": "sha256:fc99a98a8360bf78515e934e71cdf32e60138d8833c0dc7650d36906414cf19b"
-    },
-    {
-      "name": "SHA256SUMS.txt",
-      "size": 307,
-      "digest": "sha256:5ebad0f8e02d1471d76944ec30068edd6ac9a07b29fdc4388a8dbcf3e483de0c"
     }
   ]
 }

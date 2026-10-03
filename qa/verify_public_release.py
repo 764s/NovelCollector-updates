@@ -230,7 +230,7 @@ def check(args):
             # Run installed application tests with the bundled runtime as well.
             app = home / 'releases' / current / 'app'
             code = "import sys, unittest, shutil; sys.path.insert(0, sys.argv[1]); assert shutil.which('gh') is None; r=unittest.TextTestRunner().run(unittest.defaultTestLoader.discover(sys.argv[1]+'/tests')); raise SystemExit(not r.wasSuccessful())"
-            completed = subprocess.run([str(python), '-I', '-B', '-c', code, str(app)], env=env, capture_output=True, text=True, encoding='utf-8', timeout=180)
+            completed = subprocess.run([str(python), '-X', 'utf8', '-I', '-B', '-c', code, str(app)], env=env, capture_output=True, text=True, encoding='utf-8', timeout=180)
             if completed.returncode:
                 raise RuntimeError('Installed tests failed: ' + completed.stderr[-6000:])
             count = re.search(r'Ran (\d+) tests', completed.stderr)

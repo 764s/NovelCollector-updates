@@ -17,7 +17,24 @@ defaults:
   run:
     shell: bash
 jobs:
+  upload:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Retrieve the staged distribution files
+        run: |
+          python -c 'import os,re; assert re.fullmatch(r"v\d+\.\d+\.\d+", os.environ["RELEASE_TAG"])'
+          git fetch --depth=1 origin "refs/heads/candidate/${RELEASE_TAG#v}"
+          mkdir incoming
+          git archive FETCH_HEAD | tar -x -C incoming
+      - name: Upload verified distribution assets to the draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python qa/public_release_candidate.py upload "$RELEASE_TAG"
   preflight:
+    needs: upload
     strategy:
       fail-fast: false
       matrix:

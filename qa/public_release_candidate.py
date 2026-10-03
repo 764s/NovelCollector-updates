@@ -45,8 +45,56 @@ def candidate(tag):
     return release
 
 
+def upload_candidate(tag):
+    if not re.fullmatch(r'v\d+\.\d+\.\d+', tag):
+        raise ValueError('Expected a version tag')
+    root = Path('incoming')
+    manifest = json.loads((root / 'candidate.json').read_text(encoding='utf-8'))
+    version = tag[1:]
+    names = {'NovelCollector-' + version + suffix for suffix in
+             ('-app-only.zip', '-app-only.zip.sha256', '-windows-x64.zip', '-linux-x64.tar.gz')} | {'SHA256SUMS.txt'}
+    if manifest.get('tag') != tag or not re.fullmatch('[0-9a-f]{40}', manifest.get('source_commit', '')):
+        raise ValueError('Candidate source identity mismatch')
+    records = manifest.get('assets', [])
+    if len(records) != 5 or {a['name'] for a in records} != names:
+        raise ValueError('Expected five distribution files')
+    for item in records:
+        path = root / item['name']
+        if path.is_symlink() or not 0 < path.stat().st_size <= 64 * 1024 * 1024:
+            raise ValueError('Unsafe candidate file')
+        data = path.read_bytes()
+        if len(data) != item['bytes'] or sha256(data).hexdigest() != item['sha256']:
+            raise ValueError('Candidate file digest mismatch')
+    repo = json.loads(gh('api', 'repos/' + REPOSITORY))
+    if repo.get('private') is not False:
+        raise ValueError('Distribution must be public')
+    releases = json.loads(gh('api', 'repos/' + REPOSITORY + '/releases?per_page=100'))
+    existing = next((a for a in releases if a.get('tag_name') == tag), None)
+    marker = '<!-- source-commit: ' + manifest['source_commit'] + ' -->'
+    if existing and (not existing.get('draft') or marker not in (existing.get('body') or '')):
+        raise ValueError('Refusing to replace a published release or unrelated draft')
+    notes = manifest.get('notes')
+    if not isinstance(notes, str) or marker not in notes or len(notes) > 65536:
+        raise ValueError('Invalid candidate release notes')
+    notes_path = root / 'release-notes.md'
+    notes_path.write_text(notes, encoding='utf-8')
+    if not existing:
+        gh('release', 'create', tag, '--repo', REPOSITORY, '--target', 'main', '--draft',
+           '--title', 'NovelCollector ' + version, '--notes-file', str(notes_path))
+    gh('release', 'upload', tag, '--repo', REPOSITORY, *(str(root / name) for name in sorted(names)), '--clobber')
+    uploaded = candidate(tag)
+    actual = {a['name']:(a['size'], a['digest']) for a in uploaded['assets']}
+    expected = {a['name']:(a['bytes'], 'sha256:' + a['sha256']) for a in records}
+    if actual != expected:
+        raise ValueError('Uploaded assets differ from staged candidate')
+    print(json.dumps({'uploaded': tag, 'assets': len(records)}))
+
+
 def main():
     action, tag = sys.argv[1:]
+    if action == 'upload':
+        upload_candidate(tag)
+        return
     release = candidate(tag)
     fingerprint = sha256(json.dumps(sorted((a['name'], a['size'], a['digest']) for a in release['assets'])).encode()).hexdigest()
     if action in ('promote', 'receipt'):

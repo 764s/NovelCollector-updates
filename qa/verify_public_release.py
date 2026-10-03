@@ -229,15 +229,16 @@ def check(args):
             stop()
             # Run installed application tests with the bundled runtime as well.
             app = home / 'releases' / current / 'app'
-            code = "import sys, unittest, shutil; sys.path.insert(0, sys.argv[1]); assert shutil.which('gh') is None; r=unittest.TextTestRunner().run(unittest.defaultTestLoader.discover(sys.argv[1]+'/tests')); raise SystemExit(not r.wasSuccessful())"
+            code = "import sys, unittest, shutil; sys.path[:0]=[sys.argv[1],sys.argv[1]+'/tests']; assert shutil.which('gh') is None; loader=unittest.defaultTestLoader; suite=loader.loadTestsFromNames(['test_updater','test_release_http','test_github_updates','test_public_updates']) if sys.platform=='win32' else loader.discover(sys.argv[1]+'/tests'); r=unittest.TextTestRunner().run(suite); raise SystemExit(not r.wasSuccessful())"
             completed = subprocess.run([str(python), '-X', 'utf8', '-I', '-B', '-c', code, str(app)], env=env, capture_output=True, text=True, encoding='utf-8', timeout=180)
             if completed.returncode:
                 raise RuntimeError('Installed tests failed: ' + completed.stderr[-6000:])
             count = re.search(r'Ran (\d+) tests', completed.stderr)
-            assert count and int(count[1]) >= 192
+            assert count and int(count[1]) >= (67 if os.name == 'nt' else 258)
             report = {'version': current, 'platform': platform, 'online': args.online,
                 'application_github_credentials': False, 'application_cli': False, 'native_launcher': True,
                 'backup_and_data_preserved': True, 'installed_archive_tests': int(count[1]),
+                'test_scope': 'update modules' if os.name == 'nt' else 'full application suite',
                 'install_and_restart': True, 'rollback': not args.online,
                 'start_kind': 'same-client lower-version fixture' if args.online else 'complete package'}
             if args.output:

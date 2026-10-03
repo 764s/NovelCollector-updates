@@ -65,7 +65,7 @@ def staged_files(tag):
             raise ValueError('Unsafe candidate file')
         data = path.read_bytes()
         if len(data) != item['bytes'] or sha256(data).hexdigest() != item['sha256']:
-            raise ValueError('Candidate file digest mismatch')
+            raise ValueError('Candidate file digest mismatch: ' + item['name'])
     return manifest
 
 
